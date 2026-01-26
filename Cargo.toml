@@ -5,7 +5,7 @@ members = ["af-alfred-workflow", "xtasks/*"]
 [workspace.package]
 version = "0.8.87"
 edition = "2024"
-repository = "https://github.com/smykla-labs/af"
+repository = "https://github.com/smykla-skalski/af"
 license = "MIT"
 
 [workspace.dependencies]
@@ -37,7 +37,7 @@ url = "2.5.4"
 name = "af"
 version = "0.8.87"
 edition = "2024"
-repository = "https://github.com/smykla-labs/af"
+repository = "https://github.com/smykla-skalski/af"
 license = "MIT"
 
 [dependencies]
