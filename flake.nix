@@ -17,7 +17,7 @@
 
           # Patch octocrab's build.rs to avoid cargo metadata in Nix vendor environment
           postPatch = ''
-            cat > $cargoDepsCopy/octocrab-0.49.0/build.rs << 'EOF'
+            cat > $(echo $cargoDepsCopy/octocrab-*/build.rs) << 'EOF'
             use std::env;
             use std::fs;
             use std::path::Path;
