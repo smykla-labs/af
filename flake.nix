@@ -57,7 +57,7 @@
 
           meta = {
             description = "Personal helper CLI for dotfiles, git workflows, shortcuts";
-            homepage = "https://github.com/smykla-labs/af";
+            homepage = "https://github.com/smykla-skalski/af";
             license = final.lib.licenses.mit;
             mainProgram = "af";
           };
