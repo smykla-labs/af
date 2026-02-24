@@ -11,6 +11,12 @@ sync:
       - path: renovate.json
         strategy: deep-merge
         overrides:
+          schedule:
+            - "on the first day of the month"
+          automerge: false
+          automergeStrategy: null
+          vulnerabilityAlerts:
+            automerge: false
           customManagers:
             - customType: regex
               description: "Update octocrab version in flake.nix when Cargo.lock changes"

@@ -19,6 +19,9 @@ on:
     - "src/**/*"
     - "Cargo.*"
 
+  schedule:
+  - cron: "0 0 1 * *"
+
   merge_group: {}
 
   workflow_dispatch: {}
@@ -29,12 +32,13 @@ permissions:
 jobs:
   nix-build:
     runs-on: ubuntu-24.04
+    environment: ci
 
     steps:
     - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
     - name: "Install Nix"
-      uses: cachix/install-nix-action@4e002c8ec80594ecd40e759629461e26c8abed15 # v31
+      uses: cachix/install-nix-action@4e002c8ec80594ecd40e759629461e26c8abed15 # v31.0.0
 
     - name: "Build with Nix"
       run: nix build .#af --print-build-logs
