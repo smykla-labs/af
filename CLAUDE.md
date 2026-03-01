@@ -2,6 +2,17 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Org-managed files
+
+The following files are synced from `smykla-skalski/.github` and must not be edited directly. Customize them via `.github/sync-config.yml` instead (schema: `https://raw.githubusercontent.com/smykla-skalski/.github/main/schemas/sync-config.schema.json`):
+
+- `CODE_OF_CONDUCT.md`, `CONTRIBUTING.md`, `LICENSE`, `SECURITY.md`
+- `renovate.json` (currently merged with repo-specific overrides in sync-config.yml)
+- `.github/PULL_REQUEST_TEMPLATE.md`
+- `.github/ISSUE_TEMPLATE/bug_report.yml`, `.github/ISSUE_TEMPLATE/config.yml`
+- `.github/workflows/sync-trigger.yml`
+- `.github/workflows/smyklot-pr-commands.yml`, `.github/workflows/smyklot-poll.yml`
+
 ## Build Commands
 
 ```bash
