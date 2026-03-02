@@ -83,3 +83,10 @@ nix develop                  # Enter dev shell
 - `PROJECTS_PATH` - Root directory for cloning projects
 - `DOTFILES_PATH` - Path to dotfiles directory
 - `HOMEBREW_PREFIX` - Homebrew installation path (defaults to `/opt/homebrew`)
+
+## Claude Code skills
+
+The `git-stage-hunk` SAI plugin stages partial file changes without a TTY. Use `/stage-hunk` when only some changes in a file belong in the current commit, multiple sessions modified the same file, or `git add -p` is unavailable.
+
+Install: `claude --plugin-dir ~/Projects/github.com/smykla-skalski/sai/git-stage-hunk/`
+Modes: `--list`, `--hunk H1,H2`, `--pattern REGEX`, `--file PATH`, `--range FILE:S-E`, `--verify`, `--dry-run`
