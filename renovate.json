@@ -1,6 +1,6 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "automergeStrategy": "squash",
+  "automerge": false,
   "customManagers": [
     {
       "customType": "regex",
@@ -82,7 +82,8 @@
       "matchPackageNames": ["smykla-skalski/smyklot"]
     }
   ],
+  "schedule": ["on the first day of the month"],
   "vulnerabilityAlerts": {
-    "automerge": true
+    "automerge": false
   }
 }
