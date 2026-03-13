@@ -1,10 +1,12 @@
 use crate::consts::*;
 use anyhow::Result;
+use console::{Term, measure_text_width, truncate_str};
 use phf::ordered_map::OrderedMap;
 use phf::phf_ordered_map;
 use regex::Regex;
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::env;
+use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -21,48 +23,160 @@ static LANGS_IDES_MAP: OrderedMap<&str, &str> = phf_ordered_map! {
     "rust" => RUSTROVER,
 };
 
-const SUPPORTED_IDES: &[&str] = &[
-    ZED,
-    CLION,
-    GOLAND,
-    RUBYMINE,
-    RUSTROVER,
-    WEBSTORM,
-    CODE,
-    CODE_INSIDERS,
+const ELLIPSIS: &str = "…";
+const COLUMN_GAP: &str = "  ";
+const HOME_PLACEHOLDER: &str = "~";
+const ZED_PREVIEW_APP: &str = "Zed Preview.app";
+const ZED_APP: &str = "Zed.app";
+const VSCODE_APP: &str = "Visual Studio Code.app";
+const VSCODE_INSIDERS_APP: &str = "Visual Studio Code - Insiders.app";
+const VSCODE_BIN: &str = "Electron";
+
+const SUPPORTED_IDES: &[IdeKind] = &[
+    IdeKind::Zed,
+    IdeKind::ZedPreview,
+    IdeKind::Clion,
+    IdeKind::Goland,
+    IdeKind::Rubymine,
+    IdeKind::Rustrover,
+    IdeKind::Webstorm,
+    IdeKind::VsCode,
+    IdeKind::VsCodeInsiders,
 ];
 
-const VSCODE_IDES: &[&str] = &[CODE, CODE_INSIDERS];
+const VSCODE_IDES: &[IdeKind] = &[IdeKind::VsCode, IdeKind::VsCodeInsiders];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum IdeKind {
+    Zed,
+    ZedPreview,
+    Clion,
+    Goland,
+    Rubymine,
+    Rustrover,
+    Webstorm,
+    VsCode,
+    VsCodeInsiders,
+}
+
+impl IdeKind {
+    fn command(self) -> &'static str {
+        match self {
+            IdeKind::Zed | IdeKind::ZedPreview => ZED,
+            IdeKind::Clion => CLION,
+            IdeKind::Goland => GOLAND,
+            IdeKind::Rubymine => RUBYMINE,
+            IdeKind::Rustrover => RUSTROVER,
+            IdeKind::Webstorm => WEBSTORM,
+            IdeKind::VsCode => CODE,
+            IdeKind::VsCodeInsiders => CODE_INSIDERS,
+        }
+    }
+
+    fn display_name(self) -> &'static str {
+        match self {
+            IdeKind::Zed => "Zed",
+            IdeKind::ZedPreview => "Zed Preview",
+            IdeKind::Clion => "CLion",
+            IdeKind::Goland => "GoLand",
+            IdeKind::Rubymine => "RubyMine",
+            IdeKind::Rustrover => "RustRover",
+            IdeKind::Webstorm => "WebStorm",
+            IdeKind::VsCode => "VS Code",
+            IdeKind::VsCodeInsiders => "VS Code Insiders",
+        }
+    }
+
+    fn app_name(self) -> Option<&'static str> {
+        match self {
+            IdeKind::Zed => Some(ZED_APP),
+            IdeKind::ZedPreview => Some(ZED_PREVIEW_APP),
+            IdeKind::VsCode => Some(VSCODE_APP),
+            IdeKind::VsCodeInsiders => Some(VSCODE_INSIDERS_APP),
+            _ => None,
+        }
+    }
+
+    fn app_executable_name(self) -> &'static str {
+        match self {
+            IdeKind::Zed | IdeKind::ZedPreview => "cli",
+            IdeKind::VsCode | IdeKind::VsCodeInsiders => VSCODE_BIN,
+            _ => self.command(),
+        }
+    }
+
+    fn family_rank(self) -> usize {
+        match self {
+            IdeKind::Zed | IdeKind::ZedPreview => 0,
+            IdeKind::Clion => 1,
+            IdeKind::Goland => 2,
+            IdeKind::Rubymine => 3,
+            IdeKind::Rustrover => 4,
+            IdeKind::Webstorm => 5,
+            IdeKind::VsCode | IdeKind::VsCodeInsiders => 6,
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Launcher {
-    command: &'static str,
-    path: PathBuf,
+    kind: IdeKind,
+    launcher_path: PathBuf,
+    app_path: Option<PathBuf>,
+    version: Option<String>,
     label: String,
 }
 
 impl Launcher {
-    fn new(command: &'static str, path: PathBuf) -> Self {
-        let label = build_label(command, &path);
+    fn new(
+        kind: IdeKind,
+        launcher_path: PathBuf,
+        app_path: Option<PathBuf>,
+        version: Option<String>,
+    ) -> Self {
+        let label = format_label(
+            kind,
+            version.as_deref(),
+            app_path.as_deref(),
+            &launcher_path,
+        );
 
         Self {
-            command,
-            path,
+            kind,
+            launcher_path,
+            app_path,
+            version,
             label,
         }
     }
 
+    pub fn kind(&self) -> IdeKind {
+        self.kind
+    }
+
     pub fn command(&self) -> &'static str {
-        self.command
+        self.kind.command()
+    }
+
+    pub fn launcher_path(&self) -> &Path {
+        &self.launcher_path
     }
 
     pub fn path(&self) -> &Path {
-        &self.path
+        self.launcher_path()
     }
 
     pub fn label(&self) -> &str {
         &self.label
     }
+}
+
+#[derive(Debug)]
+struct Candidate {
+    kind: IdeKind,
+    launcher_path: PathBuf,
+    app_path: Option<PathBuf>,
+    path_rank: usize,
 }
 
 pub fn get(language: &str) -> Option<&'static str> {
@@ -116,12 +230,12 @@ fn select_for_clone_with(
         .and_then(|ide| first_index_by_command(launchers, ide))
         .or_else(|| {
             if in_vscode_terminal {
-                first_index_by_commands(launchers, VSCODE_IDES)
+                first_index_by_kinds(launchers, VSCODE_IDES)
             } else {
                 None
             }
         })
-        .or_else(|| first_index_by_command(launchers, ZED))
+        .or_else(|| first_index_by_kind_family(launchers, IdeKind::Zed))
         .or_else(|| repo_ide.and_then(|ide| first_index_by_command(launchers, ide)))
         .or(Some(0))
 }
@@ -132,58 +246,249 @@ fn select_for_dot_with(
 ) -> Option<usize> {
     active_jetbrains_ide
         .and_then(|ide| first_index_by_command(launchers, ide))
-        .or_else(|| first_index_by_command(launchers, ZED))
+        .or_else(|| first_index_by_kind_family(launchers, IdeKind::Zed))
         .or_else(|| first_index_by_command(launchers, GOLAND))
-        .or_else(|| first_index_by_commands(launchers, VSCODE_IDES))
+        .or_else(|| first_index_by_kinds(launchers, VSCODE_IDES))
 }
 
 fn discover_from_path_var(path_var: Option<std::ffi::OsString>) -> Vec<Launcher> {
-    let Some(path_var) = path_var else {
-        return Vec::new();
-    };
+    let path_dirs = path_var
+        .as_ref()
+        .map(env::split_paths)
+        .map(Iterator::collect::<Vec<_>>)
+        .unwrap_or_default();
 
-    let search_paths = env::split_paths(&path_var).collect::<Vec<_>>();
-    let mut seen = HashSet::new();
-    let mut launchers = Vec::new();
+    let mut candidates = discover_path_candidates(&path_dirs);
+    candidates.extend(discover_known_app_candidates());
 
-    for command in SUPPORTED_IDES {
-        for base in &search_paths {
-            let path = base.join(command);
+    let mut by_identity = BTreeMap::new();
 
-            if !is_launcher(&path) || !seen.insert(path.clone()) {
-                continue;
-            }
+    for candidate in candidates {
+        let identity = candidate_identity(&candidate);
+        let replace = by_identity
+            .get(&identity)
+            .map(|current: &Candidate| candidate.path_rank < current.path_rank)
+            .unwrap_or(true);
 
-            launchers.push(Launcher::new(command, path));
+        if replace {
+            by_identity.insert(identity, candidate);
         }
     }
 
+    let mut launchers = by_identity
+        .into_values()
+        .map(candidate_to_launcher)
+        .collect::<Vec<_>>();
+
+    launchers.sort_by_key(|launcher| {
+        (
+            launcher.kind.family_rank(),
+            launcher.kind.display_name().to_string(),
+            home_relative(
+                launcher
+                    .app_path
+                    .as_deref()
+                    .unwrap_or(launcher.launcher_path()),
+            ),
+            home_relative(launcher.launcher_path()),
+        )
+    });
+
     launchers
+}
+
+fn discover_path_candidates(path_dirs: &[PathBuf]) -> Vec<Candidate> {
+    let mut candidates = Vec::new();
+    let mut seen = HashSet::new();
+
+    for kind in SUPPORTED_IDES {
+        for (index, base) in path_dirs.iter().enumerate() {
+            let launcher_path = base.join(kind.command());
+            if !is_launcher(&launcher_path) || !seen.insert(launcher_path.clone()) {
+                continue;
+            }
+
+            let resolved = fs::canonicalize(&launcher_path).ok();
+            let app_path = resolved
+                .as_deref()
+                .and_then(find_app_path_from_executable)
+                .or_else(|| launcher_path_to_app_path(*kind, &launcher_path));
+
+            let detected_kind = app_path
+                .as_deref()
+                .and_then(kind_from_app_path)
+                .unwrap_or(*kind);
+
+            candidates.push(Candidate {
+                kind: detected_kind,
+                launcher_path,
+                app_path,
+                path_rank: index,
+            });
+        }
+    }
+
+    candidates
+}
+
+fn discover_known_app_candidates() -> Vec<Candidate> {
+    let mut candidates = Vec::new();
+
+    for kind in SUPPORTED_IDES {
+        for executable in known_app_executables(*kind) {
+            if !is_launcher(&executable) {
+                continue;
+            }
+
+            candidates.push(Candidate {
+                kind: *kind,
+                app_path: find_app_path_from_executable(&executable),
+                launcher_path: executable,
+                path_rank: usize::MAX,
+            });
+        }
+    }
+
+    candidates
+}
+
+fn known_app_executables(kind: IdeKind) -> Vec<PathBuf> {
+    let Some(app_name) = kind.app_name() else {
+        return Vec::new();
+    };
+
+    [Path::new("/Applications").join(app_name)]
+        .into_iter()
+        .flat_map(|app_path| {
+            let executable = app_path
+                .join("Contents")
+                .join("MacOS")
+                .join(kind.app_executable_name());
+            executable.exists().then_some(executable)
+        })
+        .collect()
+}
+
+fn candidate_identity(candidate: &Candidate) -> String {
+    if let Some(app_path) = &candidate.app_path {
+        return format!("{}:{}", candidate.kind.display_name(), app_path.display());
+    }
+
+    format!(
+        "{}:{}",
+        candidate.kind.display_name(),
+        candidate.launcher_path.display()
+    )
+}
+
+fn candidate_to_launcher(candidate: Candidate) -> Launcher {
+    let version = version_line(&candidate.launcher_path)
+        .or_else(|| candidate.app_path.as_deref().and_then(version_line));
+
+    Launcher::new(
+        candidate.kind,
+        candidate.launcher_path,
+        candidate.app_path,
+        version,
+    )
 }
 
 fn first_index_by_command(launchers: &[Launcher], command: &str) -> Option<usize> {
     launchers
         .iter()
-        .position(|launcher| launcher.command == command)
+        .position(|launcher| launcher.command() == command)
 }
 
-fn first_index_by_commands(launchers: &[Launcher], commands: &[&str]) -> Option<usize> {
-    commands
+fn first_index_by_kinds(launchers: &[Launcher], kinds: &[IdeKind]) -> Option<usize> {
+    kinds
         .iter()
-        .find_map(|command| first_index_by_command(launchers, command))
+        .find_map(|kind| launchers.iter().position(|launcher| launcher.kind == *kind))
+}
+
+fn first_index_by_kind_family(launchers: &[Launcher], kind: IdeKind) -> Option<usize> {
+    launchers.iter().position(|launcher| {
+        matches!(
+            (kind, launcher.kind),
+            (IdeKind::Zed, IdeKind::Zed | IdeKind::ZedPreview)
+        )
+    })
 }
 
 fn supported_command(command: &str) -> Option<&'static str> {
     SUPPORTED_IDES
         .iter()
-        .copied()
+        .map(|kind| kind.command())
         .find(|candidate| *candidate == command)
 }
 
-fn build_label(command: &str, path: &Path) -> String {
-    version_line(path)
-        .map(|version| format!("{version} [{}]", path.display()))
-        .unwrap_or_else(|| format!("{command} [{}]", path.display()))
+fn format_label(
+    kind: IdeKind,
+    version: Option<&str>,
+    app_path: Option<&Path>,
+    launcher_path: &Path,
+) -> String {
+    let width = Term::stdout().size().1 as usize;
+    let total_width = width.max(80).saturating_sub(8);
+
+    let name = kind.display_name().to_string();
+    let version = version
+        .map(|value| extract_version(kind, value))
+        .unwrap_or_default();
+    let app_path = app_path.map(home_relative).unwrap_or_default();
+    let launcher_path = home_relative(launcher_path);
+
+    let gap_width = COLUMN_GAP.len() * 3;
+    let name_width = name.chars().count().max(12);
+    let version_width = version.chars().count().max(7);
+    let remaining = total_width.saturating_sub(name_width + version_width + gap_width);
+    let app_width = remaining * 2 / 3;
+    let launcher_width = remaining.saturating_sub(app_width);
+
+    format!(
+        "{}{}{}{}{}{}{}",
+        pad(&name, name_width),
+        COLUMN_GAP,
+        pad(&version, version_width),
+        COLUMN_GAP,
+        pad(&app_path, app_width.max(12)),
+        COLUMN_GAP,
+        pad(&launcher_path, launcher_width.max(12)),
+    )
+}
+
+fn pad(value: &str, width: usize) -> String {
+    if width == 0 {
+        return String::new();
+    }
+
+    let rendered = if measure_text_width(&value) > width {
+        truncate_str(&value, width, ELLIPSIS).into_owned()
+    } else {
+        value.to_string()
+    };
+
+    let padding = width.saturating_sub(measure_text_width(&rendered));
+    format!("{rendered}{}", " ".repeat(padding))
+}
+
+fn extract_version(kind: IdeKind, raw: &str) -> String {
+    let trimmed = raw.trim();
+    match kind {
+        IdeKind::Zed | IdeKind::ZedPreview => trimmed
+            .strip_prefix("Zed ")
+            .and_then(|value| value.split(" – ").next())
+            .unwrap_or(trimmed)
+            .to_string(),
+        IdeKind::VsCode | IdeKind::VsCodeInsiders => {
+            trimmed.lines().next().unwrap_or(trimmed).trim().to_string()
+        }
+        _ => trimmed
+            .split_whitespace()
+            .last()
+            .filter(|value| value.chars().any(|ch| ch.is_ascii_digit()))
+            .unwrap_or(trimmed)
+            .to_string(),
+    }
 }
 
 fn version_line(path: &Path) -> Option<String> {
@@ -191,8 +496,8 @@ fn version_line(path: &Path) -> Option<String> {
         .arg(FLAG_VERSION)
         .output()
         .ok()
-        .filter(|output| output.status.success())
-        .map(|output| {
+        .filter(|output| output.status.success() || !output.stdout.is_empty())
+        .and_then(|output| {
             let stdout = String::from_utf8_lossy(&output.stdout);
             let stderr = String::from_utf8_lossy(&output.stderr);
 
@@ -202,7 +507,50 @@ fn version_line(path: &Path) -> Option<String> {
                 .map(str::trim)
                 .find(|line| !line.is_empty())
                 .map(str::to_string)
-        })?
+        })
+}
+
+fn find_app_path_from_executable(path: &Path) -> Option<PathBuf> {
+    let mut current = path;
+    while let Some(parent) = current.parent() {
+        if parent.extension().and_then(OsStr::to_str) == Some("app") {
+            return Some(parent.to_path_buf());
+        }
+        current = parent;
+    }
+    None
+}
+
+fn launcher_path_to_app_path(kind: IdeKind, launcher_path: &Path) -> Option<PathBuf> {
+    if kind.command() != ZED {
+        return None;
+    }
+
+    let contents = fs::read_to_string(launcher_path).ok()?;
+    let re = Regex::new(r"'(/Applications/[^']+\.app)/Contents/MacOS/cli'").ok()?;
+    re.captures(&contents)
+        .and_then(|captures| captures.get(1))
+        .map(|value| PathBuf::from(value.as_str()))
+}
+
+fn kind_from_app_path(path: &Path) -> Option<IdeKind> {
+    match path.file_name().and_then(OsStr::to_str) {
+        Some(ZED_APP) => Some(IdeKind::Zed),
+        Some(ZED_PREVIEW_APP) => Some(IdeKind::ZedPreview),
+        Some(VSCODE_APP) => Some(IdeKind::VsCode),
+        Some(VSCODE_INSIDERS_APP) => Some(IdeKind::VsCodeInsiders),
+        _ => None,
+    }
+}
+
+fn home_relative(path: &Path) -> String {
+    let rendered = path.display().to_string();
+    let home = env::var(HOME).unwrap_or_default();
+    if home.is_empty() {
+        return rendered;
+    }
+
+    rendered.replacen(&home, HOME_PLACEHOLDER, 1)
 }
 
 fn is_launcher(path: &Path) -> bool {
@@ -243,42 +591,107 @@ mod tests {
     }
 
     #[test]
-    fn discovers_multiple_zed_launchers_in_path_order() -> anyhow::Result<()> {
-        let first = TempDir::new()?;
-        let second = TempDir::new()?;
-        write_launcher(first.path(), ZED, "Zed Preview 1")?;
-        write_launcher(second.path(), ZED, "Zed Stable 2")?;
+    fn dedupes_same_preview_app_and_keeps_path_first_launcher() -> anyhow::Result<()> {
+        let dir = TempDir::new()?;
+        let first = dir.path().join("zed");
+        let second = dir.path().join("zed-second");
+        write_launcher(
+            &first,
+            "#!/bin/sh\nexec '/Applications/Zed Preview.app/Contents/MacOS/cli' \"$@\"\n",
+        )?;
+        write_launcher(
+            &second,
+            "#!/bin/sh\nexec '/Applications/Zed Preview.app/Contents/MacOS/cli' \"$@\"\n",
+        )?;
 
-        let launchers = discover_from_paths(&[first.path(), second.path()]);
+        let mut by_identity = BTreeMap::new();
+        for candidate in [
+            Candidate {
+                kind: IdeKind::ZedPreview,
+                launcher_path: first.clone(),
+                app_path: Some(PathBuf::from("/Applications/Zed Preview.app")),
+                path_rank: 0,
+            },
+            Candidate {
+                kind: IdeKind::ZedPreview,
+                launcher_path: second,
+                app_path: Some(PathBuf::from("/Applications/Zed Preview.app")),
+                path_rank: 1,
+            },
+            Candidate {
+                kind: IdeKind::Zed,
+                launcher_path: PathBuf::from("/Applications/Zed.app/Contents/MacOS/cli"),
+                app_path: Some(PathBuf::from("/Applications/Zed.app")),
+                path_rank: usize::MAX,
+            },
+        ] {
+            if by_identity
+                .get(&candidate_identity(&candidate))
+                .map(|current: &Candidate| candidate.path_rank < current.path_rank)
+                .unwrap_or(true)
+            {
+                by_identity.insert(candidate_identity(&candidate), candidate);
+            }
+        }
 
-        assert_eq!(commands(&launchers), vec![ZED, ZED]);
-        assert_eq!(launchers[0].path(), first.path().join(ZED));
-        assert_eq!(launchers[1].path(), second.path().join(ZED));
+        let launchers = by_identity
+            .into_values()
+            .map(candidate_to_launcher)
+            .collect::<Vec<_>>();
+
+        assert_eq!(launchers.len(), 2);
+        assert!(
+            launchers
+                .iter()
+                .any(|launcher| launcher.kind == IdeKind::ZedPreview)
+        );
+        assert!(
+            launchers
+                .iter()
+                .any(|launcher| launcher.kind == IdeKind::Zed)
+        );
 
         Ok(())
     }
 
     #[test]
-    fn keeps_duplicate_launchers_with_same_version_when_paths_differ() -> anyhow::Result<()> {
-        let first = TempDir::new()?;
-        let second = TempDir::new()?;
-        write_launcher(first.path(), ZED, "Zed 0.228.0")?;
-        write_launcher(second.path(), ZED, "Zed 0.228.0")?;
+    fn detects_zed_regular_and_preview_from_apps() {
+        assert_eq!(
+            kind_from_app_path(Path::new("/Applications/Zed.app")),
+            Some(IdeKind::Zed)
+        );
+        assert_eq!(
+            kind_from_app_path(Path::new("/Applications/Zed Preview.app")),
+            Some(IdeKind::ZedPreview)
+        );
+    }
 
-        let launchers = discover_from_paths(&[first.path(), second.path()]);
+    #[test]
+    fn formats_vscode_name_and_home_relative_paths() {
+        let previous = env::var_os(HOME);
+        unsafe { env::set_var(HOME, "/Users/test") };
+        let label = format_label(
+            IdeKind::VsCode,
+            Some("1.109.5"),
+            Some(Path::new("/Users/test/Applications/Visual Studio Code.app")),
+            Path::new("/Users/test/.cargo/bin/code"),
+        );
 
-        assert_eq!(launchers.len(), 2);
-        assert_ne!(launchers[0].path(), launchers[1].path());
-
-        Ok(())
+        assert!(label.contains("VS Code"));
+        assert!(label.contains("1.109.5"));
+        assert!(!label.contains('\n'));
+        assert!(!label.contains("/Users/test"));
+        match previous {
+            Some(value) => unsafe { env::set_var(HOME, value) },
+            None => unsafe { env::remove_var(HOME) },
+        }
     }
 
     #[test]
     fn selects_active_vscode_before_zed() {
         let launchers = vec![
-            launcher(ZED, "/tmp/bin/zed"),
-            launcher(CODE, "/tmp/bin/code"),
-            launcher(CODE_INSIDERS, "/tmp/bin/code-insiders"),
+            launcher(IdeKind::Zed, "/tmp/bin/zed"),
+            launcher(IdeKind::VsCode, "/tmp/bin/code"),
         ];
 
         assert_eq!(
@@ -288,10 +701,10 @@ mod tests {
     }
 
     #[test]
-    fn selects_zed_before_language_match_when_not_in_editor() {
+    fn selects_zed_family_before_language_match_when_not_in_editor() {
         let launchers = vec![
-            launcher(ZED, "/tmp/bin/zed"),
-            launcher(RUSTROVER, "/tmp/bin/rustrover"),
+            launcher(IdeKind::ZedPreview, "/tmp/bin/zed"),
+            launcher(IdeKind::Rustrover, "/tmp/bin/rustrover"),
         ];
 
         assert_eq!(
@@ -303,46 +716,46 @@ mod tests {
     #[test]
     fn dot_prefers_zed_then_goland_then_vscode() {
         let launchers = vec![
-            launcher(CODE, "/tmp/bin/code"),
-            launcher(GOLAND, "/tmp/bin/goland"),
+            launcher(IdeKind::VsCode, "/tmp/bin/code"),
+            launcher(IdeKind::Goland, "/tmp/bin/goland"),
         ];
         assert_eq!(select_for_dot_with(None, &launchers), Some(1));
 
         let launchers = vec![
-            launcher(CODE, "/tmp/bin/code"),
-            launcher(ZED, "/tmp/bin/zed"),
+            launcher(IdeKind::VsCode, "/tmp/bin/code"),
+            launcher(IdeKind::Zed, "/tmp/bin/zed"),
         ];
         assert_eq!(select_for_dot_with(None, &launchers), Some(1));
     }
 
-    fn discover_from_paths(paths: &[&Path]) -> Vec<Launcher> {
-        let joined = env::join_paths(paths).unwrap();
-        discover_from_path_var(Some(joined))
+    fn launcher(kind: IdeKind, path: &str) -> Launcher {
+        Launcher::new(kind, PathBuf::from(path), None, None)
     }
 
-    fn commands(launchers: &[Launcher]) -> Vec<&'static str> {
-        launchers.iter().map(Launcher::command).collect()
-    }
-
-    fn launcher(command: &'static str, path: &str) -> Launcher {
-        Launcher {
-            command,
-            path: PathBuf::from(path),
-            label: command.to_string(),
-        }
-    }
-
-    fn write_launcher(dir: &Path, name: &str, version: &str) -> anyhow::Result<()> {
-        let path = dir.join(name);
-        fs::write(&path, format!("#!/bin/sh\necho '{version}'\n"))?;
+    fn write_launcher(path: &Path, contents: &str) -> anyhow::Result<()> {
+        fs::write(path, contents)?;
 
         #[cfg(unix)]
         {
-            let mut permissions = fs::metadata(&path)?.permissions();
+            let mut permissions = fs::metadata(path)?.permissions();
             permissions.set_mode(0o755);
-            fs::set_permissions(&path, permissions)?;
+            fs::set_permissions(path, permissions)?;
         }
 
         Ok(())
+    }
+
+    #[test]
+    fn home_relative_replaces_home_with_tilde() {
+        let previous = env::var_os(HOME);
+        unsafe { env::set_var(HOME, "/Users/test") };
+        assert_eq!(
+            home_relative(Path::new("/Users/test/bin/zed")),
+            "~/bin/zed".to_string()
+        );
+        match previous {
+            Some(value) => unsafe { env::set_var(HOME, value) },
+            None => unsafe { env::remove_var(HOME) },
+        }
     }
 }
