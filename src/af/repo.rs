@@ -1,6 +1,6 @@
 use crate::consts::*;
 use crate::ides;
-use crate::utils::{self, RepositoryTransport};
+use crate::utils;
 use anyhow::anyhow;
 use log::{debug, warn};
 use std::collections::BTreeMap;

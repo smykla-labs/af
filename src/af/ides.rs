@@ -474,8 +474,8 @@ fn pad(value: &str, width: usize) -> String {
         return String::new();
     }
 
-    let rendered = if measure_text_width(&value) > width {
-        truncate_str(&value, width, ELLIPSIS).into_owned()
+    let rendered = if measure_text_width(value) > width {
+        truncate_str(value, width, ELLIPSIS).into_owned()
     } else {
         value.to_string()
     };

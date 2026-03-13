@@ -217,14 +217,13 @@ where
             let head_spec = format!("{clean_pattern}{HEAD}");
 
             // Try HEAD first
-            if let Ok((_, Some(reference))) = repo.revparse_ext(&head_spec) {
-                if let Some(ref_short) = reference.shorthand() {
+            if let Ok((_, Some(reference))) = repo.revparse_ext(&head_spec)
+                && let Some(ref_short) = reference.shorthand() {
                     return Ok((
                         remote_name.to_string(),
                         ref_short.replace(&clean_pattern, ""),
                     ));
                 }
-            }
 
             // Fallback: check for "main" and "master" branches
             for branch in ["main", "master"] {

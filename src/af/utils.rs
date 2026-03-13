@@ -89,8 +89,7 @@ pub(crate) fn parse_repository_parts(repository: &str) -> Result<RepositoryParts
     let repo = repository.trim();
 
     static SSH_RE: OnceLock<Regex> = OnceLock::new();
-    let re_ssh =
-        SSH_RE.get_or_init(|| Regex::new(r"^git@([^/:]+):([^/]+)/([^/]+)\.git$").unwrap());
+    let re_ssh = SSH_RE.get_or_init(|| Regex::new(r"^git@([^/:]+):([^/]+)/([^/]+)\.git$").unwrap());
 
     if let Some(captures) = re_ssh.captures(repo) {
         return Ok(RepositoryParts {

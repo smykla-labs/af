@@ -7,7 +7,7 @@ use clio::ClioPath;
 use console::style;
 use dialoguer::{Confirm, FuzzySelect, Input, theme::ColorfulTheme};
 use git2::{
-    Config, CredentialType, Cred, FetchOptions, RemoteCallbacks, Repository, StatusOptions,
+    Config, Cred, CredentialType, FetchOptions, RemoteCallbacks, Repository, StatusOptions,
     build::RepoBuilder,
 };
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
@@ -105,8 +105,8 @@ impl CloneProject {
         )
         .await;
 
-        if let Err(err) = &cloned_repo_maybe {
-            if let Some(err) = err.downcast_ref::<CloneRepositoryError>() {
+        if let Err(err) = &cloned_repo_maybe
+            && let Some(err) = err.downcast_ref::<CloneRepositoryError>() {
                 return match err {
                     CloneRepositoryError::OperationCancelled => {
                         let confirmed = Confirm::with_theme(&ColorfulTheme::default())
@@ -121,7 +121,6 @@ impl CloneProject {
                     }
                 };
             }
-        }
 
         let cloned_repo = cloned_repo_maybe?;
 
@@ -432,7 +431,9 @@ fn select_credential_strategy(
         }
     }
 
-    Err(git2::Error::from_str("no supported authentication methods available"))
+    Err(git2::Error::from_str(
+        "no supported authentication methods available",
+    ))
 }
 
 #[cfg(test)]
@@ -471,7 +472,10 @@ mod tests {
     #[test]
     fn non_git_directory_requires_confirmation_without_force() {
         let action = replacement_action(TargetDirectoryState::NonGitDirectory, false);
-        assert_eq!(action, ReplacementAction::Prompt(PromptKind::NonGitDirectory));
+        assert_eq!(
+            action,
+            ReplacementAction::Prompt(PromptKind::NonGitDirectory)
+        );
     }
 
     #[test]
@@ -521,9 +525,16 @@ mod tests {
 
     #[test]
     fn unsupported_auth_strategy_returns_error() {
-        let err =
-            select_credential_strategy("https://github.com/org/repo", None, CredentialType::empty(), "git")
-                .unwrap_err();
-        assert!(err.message().contains("no supported authentication methods available"));
+        let err = select_credential_strategy(
+            "https://github.com/org/repo",
+            None,
+            CredentialType::empty(),
+            "git",
+        )
+        .unwrap_err();
+        assert!(
+            err.message()
+                .contains("no supported authentication methods available")
+        );
     }
 }

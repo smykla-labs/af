@@ -21,6 +21,24 @@ run = 'CARGO_HOME="${CARGO_HOME:-$HOME/.cargo}" cargo install --path . --locked 
 description = "Install the project locally"
 depends = ["install::**"]
 
+# Lint
+
+[tasks.lint]
+description = "Run lint checks"
+run = "cargo clippy --all-targets --all-features"
+
+[tasks."lint::fix"]
+description = "Run lint fixes"
+run = "cargo clippy --fix --all-targets --all-features --allow-dirty --allow-staged"
+
+[tasks.test]
+description = "Run tests"
+run = "cargo test --all --verbose"
+
+[tasks.check]
+description = "Run project checks"
+depends = ["lint", "test"]
+
 # Gen
 
 [tasks."gen::docs::markdown"]
