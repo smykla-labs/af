@@ -41,7 +41,7 @@ jobs:
         GH_TOKEN: ${{ steps.github-app-token.outputs.token }}
       run: |
         last_tag="$(gh api repos/:owner/:repo/tags --paginate --jq '.[0].name')"
-        if ! git diff --quiet "$last_tag...HEAD" -- src Cargo.toml Cargo.lock xtasks; then
+        if ! git diff --quiet "$last_tag...HEAD" -- .github/scripts .github/workflows src Cargo.toml Cargo.lock xtasks; then
           echo "bump=true" >> "$GITHUB_OUTPUT"
         fi
 
