@@ -1,7 +1,7 @@
 use crate::consts::*;
 use crate::repo::Repo;
 use crate::{ides, utils};
-use anyhow::{Result, anyhow};
+use anyhow::{Context, Result, anyhow};
 use clap::{Args, ValueHint, value_parser};
 use clio::ClioPath;
 use console::style;
@@ -9,8 +9,7 @@ use dialoguer::{Confirm, FuzzySelect, Input, theme::ColorfulTheme};
 use git2::{Cred, FetchOptions, RemoteCallbacks, Repository, StatusOptions, build::RepoBuilder};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use log::{debug, info, trace};
-use regex::Regex;
-use std::{env, fs, time::Duration};
+use std::{fs, time::Duration};
 use thiserror::Error;
 
 /// Clone a project repository and optionally open it in an IDE
@@ -20,7 +19,7 @@ pub struct CloneProject {
     #[arg(value_parser = utils::parse_repository)]
     repository_url: Option<String>,
 
-    /// Open the cloned repository in a matching IDE if one is available
+    /// Open the cloned repository in an installed IDE picker, preselecting the best match
     #[arg(long, default_value_t = true, require_equals = true)]
     open_ide: std::primitive::bool,
 
@@ -138,32 +137,37 @@ impl CloneProject {
             return Ok(());
         }
 
-        let re = Regex::new(r"application\.com\.jetbrains\.(\w+)(?:-.+)?(?:\.\d+)*")?;
-        let xpc_service_name = env::var(XPC_SERVICE_NAME).unwrap_or_default();
+        let repo_ide = repo.find_ide().await?;
+        debug!("Repository IDE: {:?}", repo_ide);
 
-        let ide = match repo.find_ide().await? {
-            Some(ide) => Some(ide),
-            None => re
-                .captures(&xpc_service_name)
-                .map(|c| c.get(1).map_or("", |m| m.as_str())),
-        };
+        let launchers = ides::discover();
+        if launchers.is_empty() {
+            info!("No supported IDE launchers found on PATH, skipping IDE selection");
+            return Ok(());
+        }
 
-        debug!("Detected IDE: {:?}", ide);
-
-        let ides = ides::list();
-
-        let index = ides
-            .binary_search(&ide.unwrap_or(ides[0]))
-            .map_err(|e| anyhow!("{:?}", e))?;
+        let labels = launchers
+            .iter()
+            .map(|launcher| launcher.label().to_string())
+            .collect::<Vec<_>>();
+        let index = ides::select_for_clone(&launchers, repo_ide).unwrap_or_default();
 
         let selection = FuzzySelect::with_theme(&ColorfulTheme::default())
             .with_prompt("Select an IDE to open the project, or press 'Esc' to skip")
             .default(index)
-            .items(&ides)
+            .items(&labels)
             .interact_opt()?;
 
         if let Some(selected) = selection {
-            utils::run_command(ides[selected], &[directory.to_str().unwrap()])?;
+            let command = launchers[selected]
+                .path()
+                .to_str()
+                .context("IDE launcher path is not valid UTF-8")?;
+            let directory = directory
+                .to_str()
+                .context("repository directory is not valid UTF-8")?;
+
+            utils::run_command(command, &[directory])?;
         }
 
         Ok(())

@@ -11,7 +11,7 @@ use crate::cmd::{
 use crate::consts::AF;
 
 use anyhow::Result;
-use clap::{CommandFactory, Parser, Subcommand, command};
+use clap::{CommandFactory, Parser, Subcommand};
 use indicatif::MultiProgress;
 use log::LevelFilter;
 

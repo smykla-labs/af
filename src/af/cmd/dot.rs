@@ -1,10 +1,7 @@
-use crate::consts::{GO, XPC_SERVICE_NAME};
 use crate::{ides, utils};
-use anyhow::{Result, anyhow};
+use anyhow::{Context, Result, anyhow};
 use clap::{Args, Subcommand, ValueHint, value_parser};
 use clio::ClioPath;
-use regex::Regex;
-use std::env;
 
 #[derive(Debug, Args)]
 #[command(visible_alias = ".")]
@@ -35,7 +32,7 @@ pub enum DotCommands {
     /// Open the dotfiles directory in an IDE
     ///
     /// If inside a JetBrains IDE, it will use that IDE to open the path.
-    /// Otherwise, it tries to open in GoLand.
+    /// Otherwise, it prefers Zed, then GoLand, then VS Code.
     Ide(Ide),
 }
 
@@ -53,20 +50,19 @@ pub struct Ide {
 
 impl Ide {
     pub fn run(&self) -> Result<()> {
-        let re = Regex::new(r"application\.com\.jetbrains\.(\w+)(?:-.+)?(?:\.\d+)*")?;
-        let xpc_service_name = env::var(XPC_SERVICE_NAME).unwrap_or_default();
-        let ide = re
-            .captures(&xpc_service_name)
-            .map(|c| c.get(1).map_or("", |m| m.as_str()));
-
-        let ides = ides::list();
-
-        let index = ides
-            .binary_search(&ide.unwrap_or(ides::get(GO).unwrap()))
-            .map_err(|e| anyhow!("{:?}", e))?;
+        let launchers = ides::discover();
+        let index = ides::select_for_dot(&launchers).ok_or_else(|| {
+            anyhow!("No supported IDE launcher found on PATH for dot ide fallback order")
+        })?;
 
         if let Some(p) = &self.path {
-            utils::run_command(ides[index], &[p.to_str().unwrap()])?;
+            let command = launchers[index]
+                .path()
+                .to_str()
+                .context("IDE launcher path is not valid UTF-8")?;
+            let path = p.to_str().context("dotfiles path is not valid UTF-8")?;
+
+            utils::run_command(command, &[path])?;
         }
 
         Ok(())

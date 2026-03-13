@@ -254,6 +254,14 @@ mod tests {
         (temp_dir, repo)
     }
 
+    fn init_repo_with_initial_branch(branch: &str) -> (TempDir, Repository) {
+        let temp_dir = TempDir::new().unwrap();
+        let mut options = git2::RepositoryInitOptions::new();
+        options.initial_head(branch);
+        let repo = Repository::init_opts(temp_dir.path(), &options).unwrap();
+        (temp_dir, repo)
+    }
+
     fn commit(repo: &Repository, msg: &str) -> git2::Oid {
         let tree_id = repo.index().unwrap().write_tree().unwrap();
         let tree = repo.find_tree(tree_id).unwrap();
@@ -271,7 +279,7 @@ mod tests {
 
     #[test]
     fn test_finds_existing_remote_head() {
-        let (remote_td, remote_repo) = init_repo();
+        let (remote_td, remote_repo) = init_repo_with_initial_branch("master");
         // Create a commit on remote so it has a HEAD
         commit(&remote_repo, "Initial commit");
 
@@ -313,13 +321,10 @@ mod tests {
 
     #[test]
     fn test_fallback_to_main_if_head_missing() {
-        let (remote_td, remote_repo) = init_repo();
+        let (remote_td, remote_repo) = init_repo_with_initial_branch("main");
 
         // Create 'main' branch on remote
-        let oid = commit(&remote_repo, "Initial commit");
-        remote_repo
-            .branch("main", &remote_repo.find_commit(oid).unwrap(), false)
-            .unwrap();
+        commit(&remote_repo, "Initial commit");
 
         let (local_td, local_repo) = init_repo();
 
@@ -346,7 +351,7 @@ mod tests {
 
     #[test]
     fn test_fallback_to_master_if_head_missing() {
-        let (remote_td, remote_repo) = init_repo();
+        let (remote_td, remote_repo) = init_repo_with_initial_branch("master");
         commit(&remote_repo, "Initial commit");
         // Default is usually master for init, so we have refs/heads/master
 

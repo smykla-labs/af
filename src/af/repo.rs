@@ -1,8 +1,7 @@
 use crate::consts::*;
 use crate::ides;
-use crate::utils;
 use anyhow::anyhow;
-use log::debug;
+use log::{debug, warn};
 use regex::Regex;
 use std::collections::BTreeMap;
 
@@ -48,20 +47,24 @@ impl<'a> Repo<'a> {
             .map_err(Into::into)
     }
 
-    pub async fn find_ide(&self) -> anyhow::Result<Option<&'a str>> {
-        let languages = self.get_languages().await?;
+    pub async fn find_ide(&self) -> anyhow::Result<Option<&'static str>> {
+        let languages = match self.get_languages().await {
+            Ok(languages) => languages,
+            Err(err) => {
+                warn!(
+                    "failed to detect repository languages for {}: {err}",
+                    self.short_format()
+                );
+                return Ok(None);
+            }
+        };
 
         debug!("Languages: {:?}", languages);
 
         for (_, language) in languages.iter().rev() {
             if let Some(ide) = ides::get(language) {
                 debug!("found IDE for language {ide}");
-
-                if utils::run_command(WHICH, &[ide])?.status.success() {
-                    return Ok(Some(ide));
-                }
-
-                debug!("command to start IDE {ide} not found");
+                return Ok(Some(ide));
             }
         }
 

@@ -7,6 +7,8 @@ pub const AF: &str = "af";
 pub const XPC_SERVICE_NAME: &str = "XPC_SERVICE_NAME";
 pub const HOME: &str = "HOME";
 pub const HOMEBREW_PREFIX: &str = "HOMEBREW_PREFIX";
+pub const PATH: &str = "PATH";
+pub const TERM_PROGRAM: &str = "TERM_PROGRAM";
 
 // Languages
 pub const C: &str = "c";
@@ -22,6 +24,9 @@ pub const GOLAND: &str = "goland";
 pub const RUBYMINE: &str = "rubymine";
 pub const RUSTROVER: &str = "rustrover";
 pub const WEBSTORM: &str = "webstorm";
+pub const ZED: &str = "zed";
+pub const CODE: &str = "code";
+pub const CODE_INSIDERS: &str = "code-insiders";
 
 // Commands
 pub const WHICH: &str = "which";
