@@ -1,6 +1,26 @@
 [tools]
 pandoc = "3.6.4"
 
+# Build
+
+[tasks."build::prod"]
+description = "Build the production binary"
+run = "cargo build --release --locked"
+
+[tasks.build]
+description = "Build the project"
+depends = ["build::**"]
+
+# Install
+
+[tasks."install::prod"]
+description = "Install the production binary locally"
+run = 'CARGO_HOME="${CARGO_HOME:-$HOME/.cargo}" cargo install --path . --locked --force'
+
+[tasks.install]
+description = "Install the project locally"
+depends = ["install::**"]
+
 # Gen
 
 [tasks."gen::docs::markdown"]
