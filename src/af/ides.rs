@@ -427,6 +427,17 @@ fn format_label(
     app_path: Option<&Path>,
     launcher_path: &Path,
 ) -> String {
+    let home = env::var(HOME).ok();
+    format_label_with_home(kind, version, app_path, launcher_path, home.as_deref())
+}
+
+fn format_label_with_home(
+    kind: IdeKind,
+    version: Option<&str>,
+    app_path: Option<&Path>,
+    launcher_path: &Path,
+    home: Option<&str>,
+) -> String {
     let width = Term::stdout().size().1 as usize;
     let total_width = width.max(80).saturating_sub(8);
 
@@ -434,8 +445,10 @@ fn format_label(
     let version = version
         .map(|value| extract_version(kind, value))
         .unwrap_or_default();
-    let app_path = app_path.map(home_relative).unwrap_or_default();
-    let launcher_path = home_relative(launcher_path);
+    let app_path = app_path
+        .map(|path| home_relative_with(&path.display().to_string(), home))
+        .unwrap_or_default();
+    let launcher_path = home_relative_with(&launcher_path.display().to_string(), home);
 
     let gap_width = COLUMN_GAP.len() * 3;
     let name_width = name.chars().count().max(12);
@@ -544,13 +557,16 @@ fn kind_from_app_path(path: &Path) -> Option<IdeKind> {
 }
 
 fn home_relative(path: &Path) -> String {
-    let rendered = path.display().to_string();
-    let home = env::var(HOME).unwrap_or_default();
-    if home.is_empty() {
-        return rendered;
-    }
+    let home = env::var(HOME).ok();
+    home_relative_with(&path.display().to_string(), home.as_deref())
+}
 
-    rendered.replacen(&home, HOME_PLACEHOLDER, 1)
+fn home_relative_with(rendered: &str, home: Option<&str>) -> String {
+    let Some(home) = home.filter(|value| !value.is_empty()) else {
+        return rendered.to_string();
+    };
+
+    rendered.replacen(home, HOME_PLACEHOLDER, 1)
 }
 
 fn is_launcher(path: &Path) -> bool {
@@ -576,7 +592,6 @@ fn is_launcher(path: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::env;
     use std::fs;
     use tempfile::TempDir;
 
@@ -668,23 +683,18 @@ mod tests {
 
     #[test]
     fn formats_vscode_name_and_home_relative_paths() {
-        let previous = env::var_os(HOME);
-        unsafe { env::set_var(HOME, "/Users/test") };
-        let label = format_label(
+        let label = format_label_with_home(
             IdeKind::VsCode,
             Some("1.109.5"),
             Some(Path::new("/Users/test/Applications/Visual Studio Code.app")),
             Path::new("/Users/test/.cargo/bin/code"),
+            Some("/Users/test"),
         );
 
         assert!(label.contains("VS Code"));
         assert!(label.contains("1.109.5"));
         assert!(!label.contains('\n'));
         assert!(!label.contains("/Users/test"));
-        match previous {
-            Some(value) => unsafe { env::set_var(HOME, value) },
-            None => unsafe { env::remove_var(HOME) },
-        }
     }
 
     #[test]
@@ -747,15 +757,9 @@ mod tests {
 
     #[test]
     fn home_relative_replaces_home_with_tilde() {
-        let previous = env::var_os(HOME);
-        unsafe { env::set_var(HOME, "/Users/test") };
         assert_eq!(
-            home_relative(Path::new("/Users/test/bin/zed")),
+            home_relative_with("/Users/test/bin/zed", Some("/Users/test")),
             "~/bin/zed".to_string()
         );
-        match previous {
-            Some(value) => unsafe { env::set_var(HOME, value) },
-            None => unsafe { env::remove_var(HOME) },
-        }
     }
 }

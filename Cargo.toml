@@ -67,6 +67,7 @@ url.workspace = true
 [lib]
 name = "af"
 path = "src/af/lib.rs"
+doctest = false
 
 [[bin]]
 name = "af"

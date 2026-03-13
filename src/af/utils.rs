@@ -6,14 +6,51 @@ use fern::Dispatch;
 use fern::colors::{Color, ColoredLevelConfig};
 use log::{LevelFilter, trace};
 use regex::Regex;
-use std::process::{Command, Output};
+use std::process::Output;
+use std::sync::OnceLock;
 use std::time::SystemTime;
 use std::{env, io};
+use tokio::process::Command;
+use url::Url;
 
-pub fn run_command(command: &str, args: &[&str]) -> Result<Output> {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum RepositoryTransport {
+    Ssh,
+    Http,
+    Https,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct RepositoryParts {
+    pub transport: RepositoryTransport,
+    pub host: String,
+    pub org: String,
+    pub name: String,
+}
+
+impl RepositoryParts {
+    pub(crate) fn canonical_url(&self) -> String {
+        match self.transport {
+            RepositoryTransport::Ssh => self.ssh_url(),
+            RepositoryTransport::Http => {
+                format!("http://{}/{}/{}", self.host, self.org, self.name)
+            }
+            RepositoryTransport::Https => {
+                format!("https://{}/{}/{}", self.host, self.org, self.name)
+            }
+        }
+    }
+
+    pub(crate) fn ssh_url(&self) -> String {
+        format!("git@{}:{}/{}.git", self.host, self.org, self.name)
+    }
+}
+
+pub async fn run_command(command: &str, args: &[&str]) -> Result<Output> {
     let output = Command::new(command)
         .args(args)
         .output()
+        .await
         .with_context(|| format!("Failed to execute command: {} {:?}", command, args))?;
 
     trace!(
@@ -36,23 +73,7 @@ pub fn format_directory(directory: &ClioPath) -> String {
 }
 
 pub fn parse_repository(repository: &str) -> Result<String> {
-    let repo = repository.trim();
-
-    // check if in ssh format
-    if Regex::new(r"^git@([^/]+):([^/]+)/([^/]+)\.git$")?.is_match(repo) {
-        return Ok(repo.to_string());
-    }
-
-    // check if in http(s) format
-    if Regex::new(r"^https?://([^/]+)/([^/]+)/([^/]+)(?:/.*?)?$")?.is_match(repo) {
-        return Ok(repo.to_string());
-    }
-
-    anyhow::bail!(
-        "Unsupported repository URL. Supported formats: [{}, {}]",
-        style("git@<host>:<org>/<repo>.git").bold(),
-        style("http[s]://<host>/<org>/<repo>[/...]").bold(),
-    );
+    parse_repository_parts(repository).map(|parts| parts.canonical_url())
 }
 
 pub fn validate_repository(repository: &str) -> Result<()> {
@@ -60,24 +81,71 @@ pub fn validate_repository(repository: &str) -> Result<()> {
 }
 
 pub fn convert_to_ssh<S: AsRef<str>>(repository: S) -> Result<String> {
-    let repo = repository.as_ref().trim();
+    parse_repository_parts(repository.as_ref()).map(|parts| parts.ssh_url())
+}
 
-    let re_ssh = Regex::new(r"^git@([^/]+):([^/]+)/([^/]+)\.git$")?;
-    if re_ssh.is_match(repo) {
-        return Ok(repo.to_string());
+pub(crate) fn parse_repository_parts(repository: &str) -> Result<RepositoryParts> {
+    let repo = repository.trim();
+
+    static SSH_RE: OnceLock<Regex> = OnceLock::new();
+    let re_ssh =
+        SSH_RE.get_or_init(|| Regex::new(r"^git@([^/:]+):([^/]+)/([^/]+)\.git$").unwrap());
+
+    if let Some(captures) = re_ssh.captures(repo) {
+        return Ok(RepositoryParts {
+            transport: RepositoryTransport::Ssh,
+            host: captures.get(1).unwrap().as_str().to_string(),
+            org: captures.get(2).unwrap().as_str().to_string(),
+            name: captures.get(3).unwrap().as_str().to_string(),
+        });
     }
 
-    let re_https = Regex::new(r"^https?://([^/]+)/([^/]+)/([^/]+)(?:/.*)?$")?;
-    if let Some(caps) = re_https.captures(repo) {
-        return Ok(format!(
-            "git@{}:{}/{}.git",
-            &caps[1],
-            &caps[2],
-            &caps[3].trim_end_matches(".git")
-        ));
+    let parsed = Url::parse(repo).map_err(|_| unsupported_repository_url())?;
+
+    let transport = match parsed.scheme() {
+        "http" => RepositoryTransport::Http,
+        "https" => RepositoryTransport::Https,
+        _ => return Err(unsupported_repository_url()),
+    };
+
+    let host = parsed
+        .host_str()
+        .ok_or_else(unsupported_repository_url)?
+        .to_string();
+
+    let mut segments = parsed
+        .path_segments()
+        .ok_or_else(unsupported_repository_url)?
+        .filter(|segment| !segment.is_empty());
+
+    let org = segments
+        .next()
+        .ok_or_else(unsupported_repository_url)?
+        .to_string();
+    let name = segments
+        .next()
+        .ok_or_else(unsupported_repository_url)?
+        .trim_end_matches(".git")
+        .to_string();
+
+    if name.is_empty() {
+        return Err(unsupported_repository_url());
     }
 
-    anyhow::bail!("Only http(s) repository URLs are supported for conversion");
+    Ok(RepositoryParts {
+        transport,
+        host,
+        org,
+        name,
+    })
+}
+
+fn unsupported_repository_url() -> anyhow::Error {
+    anyhow::anyhow!(
+        "Unsupported repository URL. Supported formats: [{}, {}]",
+        style("git@<host>:<org>/<repo>.git").bold(),
+        style("http[s]://<host>/<org>/<repo>[/...]").bold(),
+    )
 }
 
 pub fn setup_logger(level: LevelFilter) -> (LevelFilter, Box<dyn log::Log>) {
@@ -101,7 +169,7 @@ pub fn setup_logger(level: LevelFilter) -> (LevelFilter, Box<dyn log::Log>) {
             ))
         })
         .level(level)
-        .chain(io::stdout())
+        .chain(io::stderr())
         .into_log()
 }
 
@@ -120,14 +188,28 @@ mod tests {
     fn parses_valid_https_url() {
         let url = "https://github.com/org/repo";
         let parsed = parse_repository(url).unwrap();
-        assert_eq!(parsed, url.trim());
+        assert_eq!(parsed, url);
     }
 
     #[test]
     fn parses_valid_https_url_with_trailing_path() {
         let url = "https://github.com/org/repo/tree/main";
         let parsed = parse_repository(url).unwrap();
-        assert_eq!(parsed, url.trim());
+        assert_eq!(parsed, "https://github.com/org/repo");
+    }
+
+    #[test]
+    fn parses_valid_https_url_with_git_suffix() {
+        let url = "https://github.com/org/repo.git";
+        let parsed = parse_repository(url).unwrap();
+        assert_eq!(parsed, "https://github.com/org/repo");
+    }
+
+    #[test]
+    fn preserves_http_scheme() {
+        let url = "http://gitlab.com/group/project/tree/main";
+        let parsed = parse_repository(url).unwrap();
+        assert_eq!(parsed, "http://gitlab.com/group/project");
     }
 
     #[test]
@@ -190,5 +272,15 @@ mod tests {
         let url = "  https://github.com/org/repo  ";
         let ssh = convert_to_ssh(url).unwrap();
         assert_eq!(ssh, "git@github.com:org/repo.git");
+    }
+
+    #[test]
+    fn parses_repository_parts_from_tree_url() {
+        let url = "https://github.com/org/repo/tree/main";
+        let parts = parse_repository_parts(url).unwrap();
+        assert_eq!(parts.host, "github.com");
+        assert_eq!(parts.org, "org");
+        assert_eq!(parts.name, "repo");
+        assert_eq!(parts.transport, RepositoryTransport::Https);
     }
 }

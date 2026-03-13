@@ -1,31 +1,28 @@
 use crate::consts::*;
 use crate::ides;
+use crate::utils::{self, RepositoryTransport};
 use anyhow::anyhow;
 use log::{debug, warn};
-use regex::Regex;
 use std::collections::BTreeMap;
 
 #[derive(Debug)]
-pub struct Repo<'a> {
-    pub username: &'a str,
-    pub host: &'a str,
-    pub org: &'a str,
-    pub name: &'a str,
+pub struct Repo {
+    pub username: String,
+    pub host: String,
+    pub org: String,
+    pub name: String,
 }
 
-impl<'a> Repo<'a> {
-    pub fn parse(url: &'a str) -> anyhow::Result<Self> {
-        let re = Regex::new(r"^git@([^:]+):([^/]+)/(.+?)\.git$")?;
-
-        let captures = re
-            .captures(url)
-            .ok_or_else(|| anyhow!("Invalid repository URL: {}", url))?;
+impl Repo {
+    pub fn parse(url: &str) -> anyhow::Result<Self> {
+        let repo = utils::parse_repository_parts(url)
+            .map_err(|_| anyhow!("Invalid repository URL: {}", url))?;
 
         Ok(Self {
-            username: GIT, // Hardcoded since it's always 'git'
-            host: captures.get(1).unwrap().as_str(),
-            org: captures.get(2).unwrap().as_str(),
-            name: captures.get(3).unwrap().as_str(),
+            username: GIT.to_string(),
+            host: repo.host,
+            org: repo.org,
+            name: repo.name,
         })
     }
 
@@ -35,7 +32,7 @@ impl<'a> Repo<'a> {
 
     pub async fn get_languages(&self) -> anyhow::Result<BTreeMap<i64, String>> {
         octocrab::instance()
-            .repos(self.org, self.name)
+            .repos(self.org.as_str(), self.name.as_str())
             .list_languages()
             .await
             .map(|languages| {
@@ -69,5 +66,26 @@ impl<'a> Repo<'a> {
         }
 
         Ok(None)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_https_repository_name_without_git_suffix() {
+        let repo = Repo::parse("https://github.com/org/repo.git").unwrap();
+        assert_eq!(repo.host, "github.com");
+        assert_eq!(repo.org, "org");
+        assert_eq!(repo.name, "repo");
+    }
+
+    #[test]
+    fn parses_browser_style_https_repository_url() {
+        let repo = Repo::parse("https://github.com/org/repo/tree/main").unwrap();
+        assert_eq!(repo.host, "github.com");
+        assert_eq!(repo.org, "org");
+        assert_eq!(repo.name, "repo");
     }
 }
