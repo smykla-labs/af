@@ -152,7 +152,6 @@ jobs:
     - define-matrix
 
     env:
-      OPENSSL_DIR: ${{ matrix.openssl_dir }}
       VERSION: ${{ needs.bump-version.outputs.new-tag }}
 
     strategy:
@@ -180,6 +179,10 @@ jobs:
 
     - name: "Build release binary"
       run: |
+        if [ -n "${{ matrix.openssl_dir }}" ]; then
+          export OPENSSL_DIR="${{ matrix.openssl_dir }}"
+        fi
+
         cargo build \
           --target ${{ matrix.target }} \
           --verbose \
