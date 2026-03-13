@@ -9,6 +9,7 @@ use std::{
     env,
     process::{Command, Stdio},
 };
+use tokio::task;
 use url::Url;
 
 #[derive(Debug, Subcommand)]
@@ -59,7 +60,7 @@ pub enum Browser {
 }
 
 impl Browser {
-    pub fn run(&self) -> anyhow::Result<()> {
+    pub async fn run(&self) -> anyhow::Result<()> {
         let dirs = vec![
             env::var(HOMEBREW_PREFIX)
                 .unwrap_or(DEFAULT_HOMEBREW_PREFIX.to_string())
@@ -83,9 +84,13 @@ impl Browser {
                     args.insert(0, FLAG_NEW_TAB);
                 }
 
-                let browser = structures::find_browser(&dirs, *browser)?;
+                let browser_kind = *browser;
+                let browser_obj = task::spawn_blocking(move || {
+                    structures::find_browser(&dirs, browser_kind)
+                })
+                .await??;
 
-                Command::new(browser.path())
+                Command::new(browser_obj.path())
                     .stdin(Stdio::null())
                     .stdout(Stdio::null())
                     .stderr(Stdio::null())
@@ -95,10 +100,16 @@ impl Browser {
                 Ok(())
             }
             Browser::Find { kinds, all, path } => {
-                let browsers = structures::find_browsers(&dirs, kinds, *all);
+                let kinds = kinds.clone();
+                let all = *all;
+                let path = *path;
+
+                let browsers =
+                    task::spawn_blocking(move || structures::find_browsers(&dirs, &kinds, all))
+                        .await?;
 
                 for b in browsers {
-                    if *path {
+                    if path {
                         println!("{}", b.path().display());
                     } else {
                         println!("{b}");

@@ -32,11 +32,12 @@ impl RepositoryParts {
     pub(crate) fn canonical_url(&self) -> String {
         match self.transport {
             RepositoryTransport::Ssh => self.ssh_url(),
-            RepositoryTransport::Http => {
-                format!("http://{}/{}/{}", self.host, self.org, self.name)
-            }
-            RepositoryTransport::Https => {
-                format!("https://{}/{}/{}", self.host, self.org, self.name)
+            RepositoryTransport::Http | RepositoryTransport::Https => {
+                let scheme = match self.transport {
+                    RepositoryTransport::Http => "http",
+                    _ => "https",
+                };
+                format!("{scheme}://{}/{}/{}", self.host, self.org, self.name)
             }
         }
     }

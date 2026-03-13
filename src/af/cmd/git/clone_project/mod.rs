@@ -366,68 +366,39 @@ fn replacement_action(state: TargetDirectoryState, force: bool) -> ReplacementAc
 }
 
 fn confirm_replace(prompt_kind: PromptKind, directory: &ClioPath) -> Result<()> {
-    match prompt_kind {
+    let dir = style(utils::format_directory(directory)).bold();
+
+    let prompt = match prompt_kind {
         PromptKind::DirtyGitRepository => {
-            debug!(
-                "{} contains uncommitted changes",
-                utils::format_directory(directory)
-            );
+            debug!("{dir} contains uncommitted changes");
+            println!("{dir} exists and is a Git repository with uncommitted changes");
 
-            println!(
-                "{} exists and is a Git repository with uncommitted changes",
-                style(utils::format_directory(directory)).bold(),
-            );
-
-            let are_you_sure = format!(
+            format!(
                 "{} {} {}",
                 style("Are you").yellow().bold(),
                 style(" REALLY ").bold().red().reverse(),
                 style("sure you want to continue and remove it?")
                     .yellow()
                     .bold()
-            );
-
-            let confirmed = Confirm::with_theme(&ColorfulTheme::default())
-                .with_prompt(are_you_sure)
-                .interact()?;
-
-            if !confirmed {
-                debug!("Aborting");
-                return Err(CloneRepositoryError::OperationCancelled.into());
-            }
+            )
         }
-        PromptKind::CleanGitRepository => {
-            let msg = format!(
-                "{} is a Git repository in a clean state. {}",
-                style(utils::format_directory(directory)).bold(),
-                style("Are you sure you want to continue and remove it?").yellow(),
-            );
+        PromptKind::CleanGitRepository => format!(
+            "{dir} is a Git repository in a clean state. {}",
+            style("Are you sure you want to continue and remove it?").yellow(),
+        ),
+        PromptKind::NonGitDirectory => format!(
+            "{dir} exists and is not a Git repository. {}",
+            style("Are you sure you want to continue and remove it?").yellow(),
+        ),
+    };
 
-            let confirmed = Confirm::with_theme(&ColorfulTheme::default())
-                .with_prompt(msg.as_str())
-                .interact()?;
+    let confirmed = Confirm::with_theme(&ColorfulTheme::default())
+        .with_prompt(&prompt)
+        .interact()?;
 
-            if !confirmed {
-                debug!("Aborting");
-                return Err(CloneRepositoryError::OperationCancelled.into());
-            }
-        }
-        PromptKind::NonGitDirectory => {
-            let msg = format!(
-                "{} exists and is not a Git repository. {}",
-                style(utils::format_directory(directory)).bold(),
-                style("Are you sure you want to continue and remove it?").yellow(),
-            );
-
-            let confirmed = Confirm::with_theme(&ColorfulTheme::default())
-                .with_prompt(msg.as_str())
-                .interact()?;
-
-            if !confirmed {
-                debug!("Aborting");
-                return Err(CloneRepositoryError::OperationCancelled.into());
-            }
-        }
+    if !confirmed {
+        debug!("Aborting");
+        return Err(CloneRepositoryError::OperationCancelled.into());
     }
 
     Ok(())

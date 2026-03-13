@@ -136,7 +136,7 @@ impl Applet {
                 Ok(())
             }
 
-            Applet::Dot { dot, .. } => dot.run(),
+            Applet::Dot { dot, .. } => dot.run().await,
 
             Applet::Git { git, .. } => git.run(&multi).await,
 
@@ -147,7 +147,7 @@ impl Applet {
 
             Applet::ProjectGitClone { clone_project, .. } => clone_project.run(&multi).await,
 
-            Applet::Browser { browser, .. } => browser.run(),
+            Applet::Browser { browser, .. } => browser.run().await,
         }
     }
 }

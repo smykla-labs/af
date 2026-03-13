@@ -2,6 +2,7 @@ use crate::{ides, utils};
 use anyhow::{Context, Result, anyhow};
 use clap::{Args, Subcommand, ValueHint, value_parser};
 use clio::ClioPath;
+use tokio::task;
 
 #[derive(Debug, Args)]
 #[command(visible_alias = ".")]
@@ -19,10 +20,10 @@ pub struct DotCmd {
 }
 
 impl DotCmd {
-    pub fn run(&self) -> Result<()> {
+    pub async fn run(&self) -> Result<()> {
         match &self.command {
-            Some(DotCommands::Ide(args)) => args.run(),
-            None => self.ide.run(),
+            Some(DotCommands::Ide(args)) => args.run().await,
+            None => self.ide.run().await,
         }
     }
 }
@@ -49,9 +50,15 @@ pub struct Ide {
 }
 
 impl Ide {
-    pub fn run(&self) -> Result<()> {
-        let launchers = ides::discover();
-        let index = ides::select_for_dot(&launchers).ok_or_else(|| {
+    pub async fn run(&self) -> Result<()> {
+        let (launchers, index) = task::spawn_blocking(|| {
+            let launchers = ides::discover();
+            let index = ides::select_for_dot(&launchers);
+            (launchers, index)
+        })
+        .await?;
+
+        let index = index.ok_or_else(|| {
             anyhow!("No supported IDE launcher found on PATH for dot ide fallback order")
         })?;
 
@@ -62,7 +69,7 @@ impl Ide {
                 .context("IDE launcher path is not valid UTF-8")?;
             let path = p.to_str().context("dotfiles path is not valid UTF-8")?;
 
-            utils::run_command(command, &[path])?;
+            utils::run_command(command, &[path]).await?;
         }
 
         Ok(())
