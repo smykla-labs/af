@@ -8,6 +8,7 @@ on:
 permissions: {}
 
 env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   WORKFLOW_TO_WATCH: trigger-bump.yml
 
 jobs:
