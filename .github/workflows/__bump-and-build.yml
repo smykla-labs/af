@@ -71,6 +71,7 @@ jobs:
     - name: "Regenerate Documentation"
       run: |
         mise run clean::gen::docs::markdown ::: gen::docs::markdown
+        cargo genman
 
     - name: "Upload generated manual page"
       uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
