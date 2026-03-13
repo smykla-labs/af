@@ -33,6 +33,15 @@ jobs:
         app-id: ${{ vars.SMYKLOT_APP_ID }}
         private-key: ${{ secrets.SMYKLOT_APP_PRIVATE_KEY }}
 
+    - name: "Generate Homebrew Tap Token"
+      id: homebrew-tap-token
+      uses: actions/create-github-app-token@29824e69f54612133e76f7eaac726eef6c875baf # v2.2.1
+      with:
+        app-id: ${{ vars.SMYKLOT_APP_ID }}
+        private-key: ${{ secrets.SMYKLOT_APP_PRIVATE_KEY }}
+        owner: smykla-skalski
+        repositories: homebrew-tap
+
     - name: "Get last bump version workflow run"
       id: get-last-workflow-run-id
       env:
@@ -61,12 +70,23 @@ jobs:
     - name: "Generate artifacts attestation"
       uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
       with:
-        subject-path: dist/**/${{ github.event.repository.name }}-*
+        subject-path: dist/**/${{ github.event.repository.name }}_*
 
-    - name: "Add ${{ matrix.name }} artifacts to the release"
+    - name: "Add release artifacts"
       uses: softprops/action-gh-release@a06a81a03ee405af7f2048a818ed3f03bbf83c7b # v2.5.0
       with:
         token: ${{ steps.github-app-token.outputs.token }}
-        files: dist/**/${{ github.event.repository.name }}-*
+        files: dist/**/${{ github.event.repository.name }}_*
         make_latest: true
         generate_release_notes: true
+
+    - name: "Trigger Homebrew Tap Update"
+      env:
+        GH_TOKEN: ${{ steps.homebrew-tap-token.outputs.token }}
+        VERSION: ${{ github.ref_name }}
+      run: |
+        gh api repos/smykla-skalski/homebrew-tap/dispatches \
+          --method POST \
+          --raw-field "event_type=af-release" \
+          --field "client_payload[version]=${VERSION#v}" \
+          --field "client_payload[repository]=${GITHUB_REPOSITORY}"

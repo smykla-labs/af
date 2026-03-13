@@ -99,17 +99,33 @@ jobs:
                 "name": "macos-arm64",
                 "runner": "macos-15",
                 "target": "aarch64-apple-darwin",
-                "env": {
-                  "OPENSSL_DIR": "/opt/homebrew/opt/openssl"
-                }
+                "archive_os": "darwin",
+                "archive_arch": "arm64",
+                "openssl_dir": "/opt/homebrew/opt/openssl"
               },
               {
                 "name": "macos-amd64",
                 "runner": "macos-15-intel",
                 "target": "x86_64-apple-darwin",
-                "env": {
-                  "OPENSSL_DIR": "/usr/local/opt/openssl"
-                }
+                "archive_os": "darwin",
+                "archive_arch": "amd64",
+                "openssl_dir": "/usr/local/opt/openssl"
+              },
+              {
+                "name": "linux-amd64",
+                "runner": "ubuntu-24.04",
+                "target": "x86_64-unknown-linux-gnu",
+                "archive_os": "linux",
+                "archive_arch": "amd64",
+                "openssl_dir": ""
+              },
+              {
+                "name": "linux-arm64",
+                "runner": "ubuntu-24.04-arm",
+                "target": "aarch64-unknown-linux-gnu",
+                "archive_os": "linux",
+                "archive_arch": "arm64",
+                "openssl_dir": ""
               }
             ]
           }
@@ -128,7 +144,8 @@ jobs:
     - define-matrix
 
     env:
-      OPENSSL_DIR: ${{ matrix.env.OPENSSL_DIR }}
+      OPENSSL_DIR: ${{ matrix.openssl_dir }}
+      VERSION: ${{ needs.bump-version.outputs.new-tag }}
 
     strategy:
       fail-fast: false
@@ -142,32 +159,41 @@ jobs:
       uses: dtolnay/rust-toolchain@efa25f7f19611383d5b0ccf2d1c8914531636bf9 # stable (uses major version tagging)
       with:
         targets: ${{ matrix.target }}
-        toolchain: nightly
+        toolchain: stable
 
     - name: "Setup Cache"
       uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
 
-    - name: "Build macOS Binary"
-      if: contains(matrix.target, 'darwin')
+    - name: "Generate manual page"
+      run: cargo genman
+
+    - name: "Build release binary"
       run: |
-        cargo +nightly build -Z unstable-options \
-          --artifact-dir dist \
+        cargo build \
           --target ${{ matrix.target }} \
           --verbose \
           --locked \
           --release
 
-    - name: "Add Arch Suffix to Binary"
-      if: contains(matrix.target, 'darwin')
-      id: add-suffix
+    - name: "Package release archive"
+      id: package
       env:
-        MATRIX_NAME: ${{ matrix.name }}
-        BASE_PATH: dist/${{ github.event.repository.name }}
+        ARCHIVE_OS: ${{ matrix.archive_os }}
+        ARCHIVE_ARCH: ${{ matrix.archive_arch }}
       run: |
-        final_path="$BASE_PATH-$MATRIX_NAME"
-        echo "binary_path=$final_path" >> "$GITHUB_OUTPUT"
-        
-        mv "$BASE_PATH" "$final_path"
+        mkdir -p dist/package
+
+        version="${VERSION#v}"
+        archive_name="${{ github.event.repository.name }}_${version}_${ARCHIVE_OS}_${ARCHIVE_ARCH}.tar.gz"
+        package_dir="dist/package/${{ github.event.repository.name }}"
+
+        rm -rf "$package_dir"
+        mkdir -p "$package_dir"
+        cp "target/${{ matrix.target }}/release/${{ github.event.repository.name }}" "$package_dir/${{ github.event.repository.name }}"
+        cp "docs/man/man1/${{ github.event.repository.name }}.1" "$package_dir/${{ github.event.repository.name }}.1"
+
+        tar -C "dist/package" -czf "dist/${archive_name}" "${{ github.event.repository.name }}"
+        echo "archive_path=dist/${archive_name}" >> "$GITHUB_OUTPUT"
 
     - name: "Upload ${{ matrix.name }} artifacts"
       uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
@@ -175,7 +201,7 @@ jobs:
       id: upload-artifacts
       with:
         name: ${{ github.event.repository.name }}-${{ matrix.name }}
-        path: ${{ steps.add-suffix.outputs.binary_path }}
+        path: ${{ steps.package.outputs.archive_path }}
         if-no-files-found: error
 
     ################################# DEBUG #################################
