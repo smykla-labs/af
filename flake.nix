@@ -11,7 +11,7 @@
       overlay = final: prev: {
         af = final.rustPlatform.buildRustPackage {
           pname = "af";
-          version = "0.11.91";
+          version = "0.11.92";
           src = ./.;
           cargoLock.lockFile = ./Cargo.lock;
 
