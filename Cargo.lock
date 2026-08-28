@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "af"
-version = "0.11.167"
+version = "0.11.168"
 dependencies = [
  "anyhow",
  "clap",
@@ -33,7 +33,7 @@ dependencies = [
 
 [[package]]
 name = "af-alfred-workflow"
-version = "0.11.167"
+version = "0.11.168"
 dependencies = [
  "powerpack",
 ]
@@ -878,7 +878,7 @@ dependencies = [
 
 [[package]]
 name = "genman"
-version = "0.11.167"
+version = "0.11.168"
 dependencies = [
  "af",
  "anyhow",
@@ -888,7 +888,7 @@ dependencies = [
 
 [[package]]
 name = "genmd"
-version = "0.11.167"
+version = "0.11.168"
 dependencies = [
  "af",
  "anyhow",
